@@ -28,10 +28,11 @@
  * SUCH DAMAGE.
  */
 
-#if !defined(__MAIN_RELAY__)
+#ifndef __MAIN_RELAY__
 #define __MAIN_RELAY__
 
 #include <limits.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,7 +50,7 @@
 
 #include <getopt.h>
 
-#if defined(__unix__) || defined(unix) || defined(__APPLE__) || defined(__DARWIN__) || defined(__MACH__)
+#if defined(__unix__) || defined(unix) || defined(__APPLE__)
 #include <ifaddrs.h>
 #include <libgen.h>
 #include <sys/resource.h>
@@ -86,9 +87,7 @@
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 #include <openssl/modes.h>
-#endif
 
 #if !defined(TURN_NO_SYSTEMD)
 #include <systemd/sd-daemon.h>
@@ -104,12 +103,10 @@ extern "C" {
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #define DEFAULT_CIPHER_LIST OSSL_default_cipher_list()
-#if TLSv1_3_SUPPORTED
 #define DEFAULT_CIPHERSUITES OSSL_default_ciphersuites()
-#endif
 #else
 #define DEFAULT_CIPHER_LIST "DEFAULT"
-#if TLSv1_3_SUPPORTED && defined(TLS_DEFAULT_CIPHERSUITES)
+#if defined(TLS_DEFAULT_CIPHERSUITES)
 #define DEFAULT_CIPHERSUITES TLS_DEFAULT_CIPHERSUITES
 #endif
 #endif
@@ -192,6 +189,7 @@ typedef struct _turn_params_ {
   char ca_cert_file[1025];
   char cert_file[1025];
   char pkey_file[1025];
+  bool rpk_enabled;
   char tls_password[513];
   char dh_file[1025];
 
@@ -208,7 +206,7 @@ typedef struct _turn_params_ {
 
   int verbose;
   int turn_daemon;
-  int no_software_attribute;
+  bool software_attribute;
   int web_admin_listen_on_workers;
 
   int do_not_use_config_file;
@@ -284,8 +282,9 @@ typedef struct _turn_params_ {
   turn_server_addrs_list_t alternate_servers_list;
   turn_server_addrs_list_t tls_alternate_servers_list;
 
-  /////////////// stop server ////////////////
-  int stop_turn_server;
+  /////////////// stop/drain server ////////////////
+  bool drain_turn_server;
+  bool stop_turn_server;
 
   ////////////// MISC PARAMS ////////////////
 
@@ -309,6 +308,8 @@ typedef struct _turn_params_ {
   vint user_quota;
   int prometheus;
   int prometheus_port;
+  char prometheus_address[INET6_ADDRSTRLEN];
+  char prometheus_path[1025];
   int prometheus_username_labels;
 
   /////// Users DB ///////////
@@ -330,6 +331,7 @@ typedef struct _turn_params_ {
   vint log_binding;
   vint no_stun_backward_compatibility;
   vint response_origin_only_with_rfc5780;
+  vint respond_http_unsupported;
 } turn_params_t;
 
 extern turn_params_t turn_params;
@@ -337,14 +339,16 @@ extern turn_params_t turn_params;
 ////////////////  Listener server /////////////////
 
 static inline int get_alt_listener_port(void) {
-  if (turn_params.alt_listener_port < 1)
+  if (turn_params.alt_listener_port < 1) {
     return turn_params.listener_port + 1;
+  }
   return turn_params.alt_listener_port;
 }
 
 static inline int get_alt_tls_listener_port(void) {
-  if (turn_params.alt_tls_listener_port < 1)
+  if (turn_params.alt_tls_listener_port < 1) {
     return turn_params.tls_listener_port + 1;
+  }
   return turn_params.alt_tls_listener_port;
 }
 
@@ -372,6 +376,7 @@ void send_auth_message_to_auth_server(struct auth_message *am);
 void init_listener(void);
 void setup_server(void);
 void run_listener_server(struct listener_server *ls);
+void enable_drain_mode(void);
 
 ////////// BPS ////////////////
 
@@ -388,7 +393,6 @@ struct ctr_state {
   unsigned int num;
   unsigned char ecount[16];
 };
-void generate_aes_128_key(char *filePath, unsigned char *returnedKey);
 unsigned char *base64encode(const void *b64_encode_this, int encode_this_many_bytes);
 void encrypt_aes_128(unsigned char *in, const unsigned char *mykey);
 unsigned char *base64decode(const void *b64_decode_this, int decode_this_many_bytes);
